@@ -56,6 +56,14 @@ class RockSeo extends WireData implements Module {
     }
 
     /**
+     * Shortcut for setCallback()
+     * @return self
+     */
+    public function callback(string $name, callable $callback) {
+      return $this->setCallback($name, $callback);
+    }
+
+    /**
      * Replace the original output of renderTag() by the callback provided as
      * second parameter.
      * @return self
@@ -63,6 +71,14 @@ class RockSeo extends WireData implements Module {
     public function hookRenderTag($key, $callback) {
       $this->addHookAfter("renderTag($key)", $callback);
       return $this;
+    }
+
+    /**
+     * Shortcut for setMarkup()
+     * @return self
+     */
+    public function markup(string $name, $markup) {
+      return $this->setMarkup($name, $markup);
     }
 
     /**
@@ -170,14 +186,6 @@ class RockSeo extends WireData implements Module {
       );
     }
     return $this->wire(new WireData());
-  }
-
-  /**
-   * Get markup value
-   * @return string
-   */
-  public function markup($key) {
-    return $this->markup->get($key);
   }
 
   /**

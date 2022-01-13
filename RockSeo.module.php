@@ -7,19 +7,19 @@
 class RockSeo extends WireData implements Module {
 
   /** @var WireData */
-  private $callbacks;
+  public $callbacks;
 
   /** @var WireData */
-  private $hrefLang;
+  public $hrefLang;
 
   /** @var WireData */
-  private $markup;
+  public $markup;
 
   /** @var WireData */
-  private $opt;
+  public $opt;
 
   /** @var Page */
-  private $page;
+  public $page;
 
   public static function getModuleInfo() {
     return [
@@ -36,8 +36,12 @@ class RockSeo extends WireData implements Module {
 
   public function init() {
     $this->wire('rockseo', $this);
+  }
+
+  public function ready() {
+    // set defaults when api is ready
+    // necessary for $page->localHttpUrl()
     $this->setDefaults();
-    $this->addHookBefore("renderTag", $this, "renderAlternate");
   }
 
   /* ##### chainable api ##### */
@@ -49,6 +53,23 @@ class RockSeo extends WireData implements Module {
     public function addTag($markup) {
       $this->setMarkup(uniqid(), $markup);
       return $this;
+    }
+
+    /**
+     * Replace the original output of renderTag() by the callback provided as
+     * second parameter.
+     * @return self
+     */
+    public function hookRenderTag($key, $callback) {
+      $this->addHookAfter("renderTag($key)", $callback);
+      return $this;
+    }
+
+    /**
+     * Shortcut for setOpt
+     */
+    public function opt($key, $value) {
+      return $this->setOpt($key, $value);
     }
 
     /**
@@ -124,6 +145,9 @@ class RockSeo extends WireData implements Module {
 
   /**
    * Get string value
+   * @param mixed $value
+   * @param string $tag for hooks (default is "value")
+   * @param string $key for hooks (eg "og:image")
    * @return string
    */
   public function ___getStringValue($value, $tag, $key) {
@@ -149,9 +173,18 @@ class RockSeo extends WireData implements Module {
   }
 
   /**
+   * Get markup value
+   * @return string
+   */
+  public function markup($key) {
+    return $this->markup->get($key);
+  }
+
+  /**
    * Set default tags
    */
   public function setDefaults() {
+    $this->page = $this->wire->page;
     $this->markup = $this->wire(new WireData);
     $this->callbacks = $this->wire(new WireData);
     $this->hrefLang = $this->wire(new WireData);
@@ -165,6 +198,7 @@ class RockSeo extends WireData implements Module {
     $this->opt->ogImageOptions = [
       'upscaling' => true,
     ];
+    $this->opt->renderAlternateDefault = true;
 
     $this
       ->setMarkup('brand', '<!-- RockSeo by baumrock.com -->')
@@ -194,7 +228,7 @@ class RockSeo extends WireData implements Module {
       ->setMarkup('og:image:type', '<meta property="og:image:type" content="{value}">')
       ->setCallback('og:image:type', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
-        if(!$img) return false; // dont render this tag
+        if(!$img) return;
         $ext = strtolower(pathinfo($img, PATHINFO_EXTENSION));
         if($ext == 'jpg' OR $ext == 'jpeg') return "image/jpg";
         if($ext == 'png') return "image/png";
@@ -202,17 +236,17 @@ class RockSeo extends WireData implements Module {
       ->setMarkup('og:image:width', '<meta property="og:image:width" content="{value}">')
       ->setCallback('og:image:width', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->width ?: false;
+        return $seo->img($img)->width;
       })
       ->setMarkup('og:image:height', '<meta property="og:image:height" content="{value}">')
       ->setCallback('og:image:height', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->height ?: false;
+        return $seo->img($img)->height;
       })
       ->setMarkup('og:image:alt', '<meta property="og:image:alt" content="{value}">')
       ->setCallback('og:image:alt', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->description ?: false;
+        return $seo->img($img)->description;
       })
 
       ->setMarkup('og:type', '<meta property="og:type" content="website">')
@@ -220,7 +254,11 @@ class RockSeo extends WireData implements Module {
       ->setMarkup('og:url', '<meta property="og:url" content="{value}">')
       ->setCallback('og:url', function($page) { return $page->httpUrl; })
 
-      // <meta property="og:locale" content="en_EN">
+      ->setMarkup('og:locale', '<meta property="og:locale" content="{value}">')
+      ->setCallback('og:locale', function($page, RockSeo $seo) {
+        return $seo->hrefLang->get($this->wire->user->language->name);
+      })
+
       // <meta name="twitter:card" content="summary">
       // <meta name="twitter:creator" content="@schtifu">
       // <meta name="twitter:site" content="@schtifu">
@@ -245,15 +283,43 @@ class RockSeo extends WireData implements Module {
       })
 
       ->setMarkup('alternate', '<link rel="alternate" href="{href}" hreflang="{lang}">')
-      ->setCallback('alternate', function($page) {
-        return [
-          'href' => 'my-url.html',
-          'lang' => 'de',
-        ];
-      });
+      ->hookRenderTag('alternate', function(HookEvent $event) {
+        if(!$langs = $event->wire->languages) return;
+        $key = $event->arguments(0);
+        /** @var RockSeo $seo */
+        $seo = $event->arguments(1);
+        $out = '';
+        $indent = '';
 
+        // add default language
+        $userlang = $this->wire->user->language;
+        if($seo->opt->renderAlternateDefault) {
+          $this->wire->user->language = $langs->getDefault();
+          $out .= $indent.
+            $seo->replaceTags($key, [
+              'href' => $seo->page->httpUrl(),
+              'lang' => 'x-default',
+            ])
+            .$seo->opt->nl;
+            $indent = $seo->opt->indent;
+        }
 
-      // <meta name="msvalidate.01" content="bing-1234">
+        // add other languages
+        foreach($event->wire->languages as $lang) {
+          $this->wire->user->language = $lang;
+          $out .= $indent
+            .$seo->replaceTags($key, [
+              'href' => $seo->page->httpUrl(),
+              'lang' => $seo->hrefLang->get($lang->name) ?: $lang->name,
+            ])
+            .$seo->opt->nl;
+          $indent = $seo->opt->indent;
+        }
+        $this->wire->user->language = $userlang;
+
+        $event->return = $out;
+      })
+
     ;
   }
 
@@ -261,63 +327,46 @@ class RockSeo extends WireData implements Module {
    * Render seo tags
    */
   public function render() {
-    // if no page is set we set it now
-    if(!$this->page) $this->setPage($this->wire->page);
-
     // generate tags
     $out = '';
     $i = 0;
     foreach($this->markup as $key=>$str) {
-      $out .= $this->renderTag($key, $i++);
+      if(!$markup = $this->renderTag($key, $this)) continue;
+      $indent = $i++ ? $this->opt->indent : $this->opt->indentFirst;
+      $out .= $indent.$markup.$this->opt->nl;
     }
     return $out;
-  }
-
-  /**
-   * Output all alternate tags on multilang sites
-   * @return void
-   */
-  public function renderAlternate(HookEvent $event) {
-    $key = $event->arguments(0);
-    if($key !== 'alternate') return;
-
-    // for alternate tag we replace the original renderTag output
-    $event->replace = true;
-
-    // loop all languages and return tag for each language
-
   }
 
   /**
    * Hookable method to render a single tag
    * @return string
    */
-  public function ___renderTag($key, $index) {
+  public function ___renderTag($key, $seo) {
     $callback = $this->callbacks->$key;
-    $markup = $this->replaceTags($key, $callback);
-    if(!$markup) return;
-    $indent = $index ? $this->opt->indent : $this->opt->indentFirst;
-    return $indent.$markup.$this->opt->nl;
+    return $this->replaceTags($key, $callback);
   }
 
   /**
    * Replace all tags in markup
+   * @param string $key
+   * @param array|callable $replace
    * @return string
    */
-  public function replaceTags($key, $callback) {
+  public function replaceTags($key, $replace) {
     $markup = $this->markup->$key;
-    if(!$callback) return $markup;
+    if(!$replace) return $markup;
 
-    // get the result of the callback
-    $callbackResult = $callback->__invoke($this->page, $this);
+    $replacements = is_array($replace)
+      ? $replace
+      : $replace->__invoke($this->page, $this);
 
-    // if the callback returns FALSE we prevent rendering the whole tag
-    if($callbackResult === false) return;
+    // no callback value --> no tag
+    if(!$replacements) return;
 
     // if the callback returns a single value (not an array)
     // we use the value as replacement for the {value} tag
-    $replacements = $callbackResult;
-    if(!is_array($callbackResult)) $replacements = ['value'=>$callbackResult];
+    if(!is_array($replacements)) $replacements = ['value'=>$replacements];
 
     foreach($replacements as $tag=>$value) {
       $value = $this->getStringValue($value, $tag, $key);

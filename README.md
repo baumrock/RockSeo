@@ -1,4 +1,4 @@
-# RockSEO
+# RockSeo
 
 Usage with default settings:
 

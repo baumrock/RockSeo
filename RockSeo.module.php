@@ -128,16 +128,24 @@ class RockSeo extends WireData implements Module {
    */
   public function ___getStringValue($value, $tag, $key) {
     if($value instanceof Pageimages) $value = $value->first();
-    if($value instanceof Pageimage) {
-      return $value
-        ->size(
-          $this->opt->ogImageWidth,
-          $this->opt->ogImageHeight,
-          $this->opt->ogImageOptions
-        )
-        ->httpUrl;
-    }
+    if($value instanceof Pageimage) return $this->img($value)->httpUrl;
     return (string)$value;
+  }
+
+  /**
+   * Return single Pageimage or WireData
+   * @return mixed
+   */
+  public function img($data) {
+    if($data instanceof Pageimages) $data = $data->first();
+    if($data instanceof Pageimage) {
+      return $data->size(
+        $this->opt->ogImageWidth,
+        $this->opt->ogImageHeight,
+        $this->opt->ogImageOptions,
+      );
+    }
+    return $this->wire(new WireData());
   }
 
   /**
@@ -194,14 +202,17 @@ class RockSeo extends WireData implements Module {
       ->setMarkup('og:image:width', '<meta property="og:image:width" content="{value}">')
       ->setCallback('og:image:width', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
+        return $seo->img($img)->width ?: false;
       })
       ->setMarkup('og:image:height', '<meta property="og:image:height" content="{value}">')
       ->setCallback('og:image:height', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
+        return $seo->img($img)->height ?: false;
       })
       ->setMarkup('og:image:alt', '<meta property="og:image:alt" content="{value}">')
       ->setCallback('og:image:alt', function($page, $seo) {
         $img = $seo->getReturn('og:image', $page);
+        return $seo->img($img)->description ?: false;
       })
 
       ->setMarkup('og:type', '<meta property="og:type" content="website">')

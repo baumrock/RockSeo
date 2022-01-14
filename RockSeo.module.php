@@ -1,8 +1,10 @@
 <?php namespace ProcessWire;
 /**
  * @author Bernhard Baumrock, 12.01.2022
- * @license COMMERCIAL DO NOT DISTRIBUTE
+ * @license MIT
  * @link https://www.baumrock.com
+ *
+ * @method string getStringValue($value, $tag, $key)
  */
 class RockSeo extends WireData implements Module {
 
@@ -57,10 +59,66 @@ class RockSeo extends WireData implements Module {
 
     /**
      * Shortcut for setCallback()
+     * @param string $name
+     * @param mixed $callback
      * @return self
      */
-    public function callback(string $name, callable $callback) {
+    public function callback(string $name, $callback) {
       return $this->setCallback($name, $callback);
+    }
+
+    /**
+     * Set canonical value
+     *
+     * Usage:
+     *
+     *
+     * @return self
+     */
+    public function canonical($data) {
+      if($data === false) {
+        $this->markup->set("canonical", null);
+      }
+      elseif(is_string($data)) {
+        $markup = $this->replaceTags("canonical", $data);
+        $this->markup("canonical", $markup);
+      }
+      elseif(is_callable($data)) $this->callback("canonical", $data);
+      return $this;
+    }
+
+    /**
+     * @return self
+     */
+    public function description($data, $options = []) {
+      if(is_string($data)) {
+        $str = $this->sanitize($data, $options);
+
+        $markup = $this->replaceTags('description', $str);
+        $this->markup('description', $markup);
+
+        $markup = $this->replaceTags('og:description', $str);
+        $this->markup('og:description', $markup);
+      }
+      elseif(is_callable($data)) {
+        $this->callback('description', $data);
+        $this->callback('og:description', $data);
+      }
+      return $this;
+    }
+
+    /**
+     * Set generator
+     *
+     * Usage:
+     * $rockseo->generator(false); // hide tag
+     * $rockseo->generator("RockSeo"); // custom value
+     *
+     * @return self
+     */
+    public function generator($data) {
+      $this->setCallback('generator', $data);
+      return $this;
     }
 
     /**
@@ -69,7 +127,20 @@ class RockSeo extends WireData implements Module {
      * @return self
      */
     public function hookRenderTag($key, $callback) {
-      $this->addHookAfter("renderTag($key)", $callback);
+      $this->addHookAfter("renderTag($key)", function($event) use($callback) {
+        $key = $event->arguments(0);
+        $seo = $event->arguments(1);
+        $event->return = $callback->__invoke($key, $seo);
+      });
+      return $this;
+    }
+
+    /**
+     * Set og:image tag
+     * @return self
+     */
+    public function image($data) {
+      $this->setCallback('og:image', $data);
       return $this;
     }
 
@@ -89,19 +160,200 @@ class RockSeo extends WireData implements Module {
     }
 
     /**
-     * Set callback
-     *
-     * @param string $name
-     * @param callable $callback
+     * Unset callback for given key
      * @return self
      */
-    public function setCallback(string $name, callable $callback) {
+    public function removeCallback($key) {
+      $this->callbacks->set($key, null);
+      return $this;
+    }
+
+    /**
+     * Remove markup tag
+     * @return self
+     */
+    public function removeMarkup($key) {
+      $this->markup->set($key, null);
+      return $this;
+    }
+
+    /**
+     * Set callback
+     *
+     * Usage:
+     * $rockseo->setCallback('og:image', function($page) { ... });
+     *
+     * Shortcut for directly populating the {value} tag:
+     * $rockseo->setCallback('generator', 'ProcessWire');
+     * $rockseo->setCallback('generator', false);
+     *
+     * Also possible:
+     * $rockseo->setCallback('foo', [
+     *   'foo' => 'my foo value',
+     *   'bar' => 'my bar value',
+     * ]);
+     *
+     * @param string $name
+     * @param mixed $callback
+     * @return self
+     */
+    public function setCallback(string $name, $callback) {
+      if(is_string($callback)
+        OR is_array($callback)
+        OR $callback === false) {
+        $callback = function() use($callback) { return $callback; };
+      }
       $this->callbacks->set($name, $callback);
       return $this;
     }
 
     /**
+     * Set default tags
+     * @return self
+     */
+    public function setDefaults() {
+      $this->page = $page = $this->wire->page;
+      $this->markup = $this->wire(new WireData);
+      $this->callbacks = $this->wire(new WireData);
+      $this->hrefLang = $this->wire(new WireData);
+
+      $this->opt = $this->wire(new WireData);
+      $this->opt->nl = "\n";
+      $this->opt->indent = '  ';
+      $this->opt->indentFirst = '';
+      $this->opt->ogImageWidth = 1200;
+      $this->opt->ogImageHeight = 630;
+      $this->opt->ogImageOptions = [
+        'upscaling' => true,
+      ];
+      $this->opt->renderAlternateDefault = true;
+
+      $this
+        ->setMarkup('brand', '<!-- RockSeo by baumrock.com -->')
+
+        ->setMarkup('title', '<title>{value}</title>')
+        ->setValue('title', $page->title)
+
+        ->setMarkup('description', '<meta name="description" content="{value}">')
+        ->setValue('description', $page->body)
+
+        ->setMarkup('generator', '<meta name="generator" content="{value}">')
+        ->setValue('generator', 'ProcessWire')
+
+        ->setMarkup('og:title', '<meta property="og:title" content="{value}">')
+        ->setValue('og:title', $page->title)
+
+        ->setMarkup('og:description', '<meta property="og:description" content="{value}">')
+        ->setValue('og:description', $page->body)
+
+        ->setMarkup('og:image', '<meta property="og:image" content="{value}">')
+        ->setCallback('og:image', function(Page $page, RockSeo $seo) {
+          return $seo->findImage($page);
+        })
+        ->setMarkup('og:image:type', '<meta property="og:image:type" content="{value}">')
+        ->setCallback('og:image:type', function($page, $seo) {
+          $img = $seo->getReturn('og:image', $page);
+          if(!$img) return;
+          $ext = strtolower(pathinfo($img, PATHINFO_EXTENSION));
+          if($ext == 'jpg' OR $ext == 'jpeg') return "image/jpg";
+          if($ext == 'png') return "image/png";
+        })
+        ->setMarkup('og:image:width', '<meta property="og:image:width" content="{value}">')
+        ->setCallback('og:image:width', function($page, $seo) {
+          $img = $seo->getReturn('og:image', $page);
+          return $seo->img($img)->width;
+        })
+        ->setMarkup('og:image:height', '<meta property="og:image:height" content="{value}">')
+        ->setCallback('og:image:height', function($page, $seo) {
+          $img = $seo->getReturn('og:image', $page);
+          return $seo->img($img)->height;
+        })
+        ->setMarkup('og:image:alt', '<meta property="og:image:alt" content="{value}">')
+        ->setCallback('og:image:alt', function($page, $seo) {
+          $img = $seo->getReturn('og:image', $page);
+          return $seo->img($img)->description;
+        })
+
+        ->setMarkup('og:type', '<meta property="og:type" content="website">')
+
+        ->setMarkup('og:url', '<meta property="og:url" content="{value}">')
+        ->setCallback('og:url', function($page) { return $page->httpUrl; })
+
+        ->setMarkup('og:locale', '<meta property="og:locale" content="{value}">')
+        ->setCallback('og:locale', function($page, RockSeo $seo) {
+          if(!$lang = $this->wire->user->language) return;
+          return $seo->hrefLang->get($lang->name);
+        })
+
+        // <meta name="twitter:card" content="summary">
+        // <meta name="twitter:creator" content="@schtifu">
+        // <meta name="twitter:site" content="@schtifu">
+        // <script type="application/ld+json">
+        // {
+        //   "@context": "https://schema.org",
+        //   "@type": "BreadcrumbList",
+        //   "itemListElement": [
+        //   {
+        //     "@type": "ListItem",
+        //     "position": 1,
+        //     "name": "About",
+        //     "item": "https://acme.com/en/about/"
+        //   }
+        //   ]
+        // }
+        // </script>
+
+        ->setMarkup('canonical', '<link rel="canonical" href="{value}">')
+        ->setCallback('canonical', function($page) {
+          return $page->httpUrl;
+        })
+
+        ->setMarkup('alternate', '<link rel="alternate" href="{href}" hreflang="{lang}">')
+        ->hookRenderTag('alternate', function($key, RockSeo $seo) {
+            if(!$langs = $this->wire->languages) return;
+            if($langs->count()<2) return;
+
+            $out = '';
+            $indent = '';
+
+            // add default language
+            $userlang = $this->wire->user->language;
+            if($seo->opt->renderAlternateDefault) {
+              $this->wire->user->language = $langs->getDefault();
+              $out .= $indent.
+                $seo->replaceTags($key, [
+                  'href' => $seo->page->httpUrl(),
+                  'lang' => 'x-default',
+                ])
+                .$seo->opt->nl;
+                $indent = $seo->opt->indent;
+            }
+
+            // add other languages
+            foreach($this->wire->languages as $lang) {
+              $this->wire->user->language = $lang;
+              $out .= $indent
+                .$seo->replaceTags($key, [
+                  'href' => $seo->page->httpUrl(),
+                  'lang' => $seo->hrefLang->get($lang->name) ?: $lang->name,
+                ])
+                .$seo->opt->nl;
+              $indent = $seo->opt->indent;
+            }
+            $this->wire->user->language = $userlang;
+
+            return $out;
+        })
+
+      ;
+
+      return $this;
+    }
+
+    /**
      * Set the hreflang value for given language
+     * @param string $langName Language name in ProcessWire
+     * @param string $hrefLang Language string in the tag, eg DE
      * @return self
      */
     public function setHrefLang($langName, $hrefLang) {
@@ -137,6 +389,37 @@ class RockSeo extends WireData implements Module {
       return $this;
     }
 
+    /**
+     * Set value for the {value} tag
+     *
+     * This is the same as setCallback() but might be more easy to understand
+     * when used with string values:
+     * $rockseo->setValue('generator', 'My App');
+     *
+     * @param string $key
+     * @param mixed $value
+     * @return self
+     */
+    public function setValue($key, $value) {
+      $this->setCallback($key, $value);
+      return $this;
+    }
+
+    /**
+     * @return self
+     */
+    public function title($data) {
+      if(is_string($data)) {
+        $this->markup('title', $this->replaceTags('title', $data));
+        $this->markup('og:title', $this->replaceTags('og:title', $data));
+      }
+      elseif(is_callable($data)) {
+        $this->callback('title', $data);
+        $this->callback('og:title', $data);
+      }
+      return $this;
+    }
+
   /* ##### END chainable api ##### */
 
   /**
@@ -146,7 +429,12 @@ class RockSeo extends WireData implements Module {
   public function findImage($page) {
     foreach($page->fields as $field) {
       if(!$field->type instanceof FieldtypeImage) continue;
-      return $page->getUnformatted($field->name);
+      $images = $page->getUnformatted($field->name);
+      foreach($images as $image) {
+        $ext = strtolower(pathinfo($image->filename, PATHINFO_EXTENSION));
+        if($ext == 'gif') continue;
+        return $image;
+      }
     }
   }
 
@@ -166,10 +454,10 @@ class RockSeo extends WireData implements Module {
    * @param string $key for hooks (eg "og:image")
    * @return string
    */
-  public function ___getStringValue($value, $tag, $key) {
+  public function ___getStringValue($value, $tag=null, $key=null) {
     if($value instanceof Pageimages) $value = $value->first();
     if($value instanceof Pageimage) return $this->img($value)->httpUrl;
-    return (string)$value;
+    return $this->sanitize($value);
   }
 
   /**
@@ -186,149 +474,6 @@ class RockSeo extends WireData implements Module {
       );
     }
     return $this->wire(new WireData());
-  }
-
-  /**
-   * Set default tags
-   */
-  public function setDefaults() {
-    $this->page = $this->wire->page;
-    $this->markup = $this->wire(new WireData);
-    $this->callbacks = $this->wire(new WireData);
-    $this->hrefLang = $this->wire(new WireData);
-
-    $this->opt = $this->wire(new WireData);
-    $this->opt->nl = "\n";
-    $this->opt->indent = '  ';
-    $this->opt->indentFirst = '';
-    $this->opt->ogImageWidth = 1200;
-    $this->opt->ogImageHeight = 630;
-    $this->opt->ogImageOptions = [
-      'upscaling' => true,
-    ];
-    $this->opt->renderAlternateDefault = true;
-
-    $this
-      ->setMarkup('brand', '<!-- RockSeo by baumrock.com -->')
-
-      ->setMarkup('title', '<title>{value}</title>')
-      ->setCallback('title', function($page) { return $page->title; })
-
-      ->setMarkup('description', '<meta name="description" content="{value}">')
-      ->setCallback('description', function($page, $seo) {
-        return $seo->texttools()->truncate($page->body, 200);
-      })
-
-      ->setMarkup('generator', '<meta name="generator" content="ProcessWire">')
-
-      ->setMarkup('og:title', '<meta property="og:title" content="{value}">')
-      ->setCallback('og:title', function($page) { return $page->title; })
-
-      ->setMarkup('og:description', '<meta property="og:description" content="{value}">')
-      ->setCallback('og:description', function($page, RockSeo $seo) {
-        return $seo->texttools()->truncate($page->body, 200);
-      })
-
-      ->setMarkup('og:image', '<meta property="og:image" content="{value}">')
-      ->setCallback('og:image', function(Page $page, RockSeo $seo) {
-        return $seo->findImage($page);
-      })
-      ->setMarkup('og:image:type', '<meta property="og:image:type" content="{value}">')
-      ->setCallback('og:image:type', function($page, $seo) {
-        $img = $seo->getReturn('og:image', $page);
-        if(!$img) return;
-        $ext = strtolower(pathinfo($img, PATHINFO_EXTENSION));
-        if($ext == 'jpg' OR $ext == 'jpeg') return "image/jpg";
-        if($ext == 'png') return "image/png";
-      })
-      ->setMarkup('og:image:width', '<meta property="og:image:width" content="{value}">')
-      ->setCallback('og:image:width', function($page, $seo) {
-        $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->width;
-      })
-      ->setMarkup('og:image:height', '<meta property="og:image:height" content="{value}">')
-      ->setCallback('og:image:height', function($page, $seo) {
-        $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->height;
-      })
-      ->setMarkup('og:image:alt', '<meta property="og:image:alt" content="{value}">')
-      ->setCallback('og:image:alt', function($page, $seo) {
-        $img = $seo->getReturn('og:image', $page);
-        return $seo->img($img)->description;
-      })
-
-      ->setMarkup('og:type', '<meta property="og:type" content="website">')
-
-      ->setMarkup('og:url', '<meta property="og:url" content="{value}">')
-      ->setCallback('og:url', function($page) { return $page->httpUrl; })
-
-      ->setMarkup('og:locale', '<meta property="og:locale" content="{value}">')
-      ->setCallback('og:locale', function($page, RockSeo $seo) {
-        return $seo->hrefLang->get($this->wire->user->language->name);
-      })
-
-      // <meta name="twitter:card" content="summary">
-      // <meta name="twitter:creator" content="@schtifu">
-      // <meta name="twitter:site" content="@schtifu">
-      // <script type="application/ld+json">
-      // {
-      //   "@context": "https://schema.org",
-      //   "@type": "BreadcrumbList",
-      //   "itemListElement": [
-      //   {
-      //     "@type": "ListItem",
-      //     "position": 1,
-      //     "name": "About",
-      //     "item": "https://acme.com/en/about/"
-      //   }
-      //   ]
-      // }
-      // </script>
-
-      ->setMarkup('canonical', '<link rel="canonical" href="{value}">')
-      ->setCallback('canonical', function($page) {
-        return $page->httpUrl;
-      })
-
-      ->setMarkup('alternate', '<link rel="alternate" href="{href}" hreflang="{lang}">')
-      ->hookRenderTag('alternate', function(HookEvent $event) {
-        if(!$langs = $event->wire->languages) return;
-        $key = $event->arguments(0);
-        /** @var RockSeo $seo */
-        $seo = $event->arguments(1);
-        $out = '';
-        $indent = '';
-
-        // add default language
-        $userlang = $this->wire->user->language;
-        if($seo->opt->renderAlternateDefault) {
-          $this->wire->user->language = $langs->getDefault();
-          $out .= $indent.
-            $seo->replaceTags($key, [
-              'href' => $seo->page->httpUrl(),
-              'lang' => 'x-default',
-            ])
-            .$seo->opt->nl;
-            $indent = $seo->opt->indent;
-        }
-
-        // add other languages
-        foreach($event->wire->languages as $lang) {
-          $this->wire->user->language = $lang;
-          $out .= $indent
-            .$seo->replaceTags($key, [
-              'href' => $seo->page->httpUrl(),
-              'lang' => $seo->hrefLang->get($lang->name) ?: $lang->name,
-            ])
-            .$seo->opt->nl;
-          $indent = $seo->opt->indent;
-        }
-        $this->wire->user->language = $userlang;
-
-        $event->return = $out;
-      })
-
-    ;
   }
 
   /**
@@ -365,6 +510,16 @@ class RockSeo extends WireData implements Module {
     $markup = $this->markup->$key;
     if(!$replace) return $markup;
 
+    // If no tag exists in the markup we return it directly.
+    // This ensures that no callback is executed on tags that
+    // provide a simple string (eg $rockseo->description('foo'))
+    if(!strpos($markup, "{")) return $markup;
+
+    // if we got a string as replacement we make it replace the value tag
+    if(is_string($replace)) $replace = ['value' => $replace];
+
+    // bd($replace, $key);
+
     $replacements = is_array($replace)
       ? $replace
       : $replace->__invoke($this->page, $this);
@@ -384,7 +539,36 @@ class RockSeo extends WireData implements Module {
   }
 
   /**
-   * @return
+   * Sanitize string for output
+   *
+   * Usage:
+   * $seo->sanitize($page->body, 200);
+   * $seo->sanitize($page->body, [
+   *   'maxLength' => 160,
+   *   'truncate' => // options array for texttools truncate()
+   *   'markupToText' => // options array for markupToText()
+   * ]);
+   *
+   * @return string
+   */
+  public function sanitize($str, $options = []) {
+    if(is_int($options)) $options = ['maxLength'=>$options];
+    $opt = $this->wire(new WireData()); /** @var WireData $opt */
+    $opt->setArray([
+      'maxLength' => 200,
+      'truncate' => [], // options for truncate()
+      'markupToText' => [], // options for markupToText()
+    ]);
+    $opt->setArray($options);
+
+    $texttools = $this->texttools();
+    $str = $texttools->markupToText($str, $opt->truncate);
+    $str = $texttools->truncate($str, $opt->maxLength, $opt->truncate);
+    return $str;
+  }
+
+  /**
+   * @return WireTextTools
    */
   public function texttools() {
     return $this->wire->sanitizer->getTextTools();
@@ -395,6 +579,7 @@ class RockSeo extends WireData implements Module {
       'markup' => $this->markup,
       'opt' => $this->opt,
       'hrefLang' => $this->hrefLang,
+      'callbacks' => $this->callbacks,
     ];
   }
 

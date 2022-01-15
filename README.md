@@ -79,9 +79,43 @@ If you have a properly set up IDE you will get instant help while typing (dont f
 
 I put a lot of effort into making customizations as easy as possible but to get great flexibility at the same time.
 
-You can try all examples easily by using the tracy console by wrapping the output in a `db()` call:
+You can try all examples easily by using the tracy console by wrapping the output in a `db()` call.
 
-<br>
+You can see the default markup tags by dumping `$rockseo` to the console:
+
+![img](https://i.imgur.com/sqt2z0J.png)
+
+You can easily customize any of those tags in several ways:
+
+## addTag()
+
+```php
+$rockseo
+  ->addTag('<meta name="google-site-verification" content="google-1234">')
+  ->render();
+```
+
+## setValue()
+
+To set the replacement for the `{value}` tag use `setValue()`:
+
+```php
+$rockseo
+  ->setValue('og:description', 'This is my website!')
+  ->render();
+```
+
+## markup() or setMarkup()
+
+This will set the whole markup for a given key or add a new tag:
+
+```php
+$rockseo
+  ->markup('og:description', "<foo>{value}</foo>")
+  ->render();
+```
+
+
 
 ---
 
@@ -105,6 +139,20 @@ $rockseo
     if($page->template == 'home') return "Welcome to RockSeo!";
     if($page->template == 'basic-page') return "RockSeo page ".$page->title;
     return $page->title." | RockSeo";
+  })
+  ->render();
+```
+
+If you want different text for both tags simply use the `setValue()` or `callback()` method:
+
+```php
+$rockseo
+  ->setValue('title', "My great website")
+  ->callback('og:title', function($page) {
+    $out = "Hi there! ";
+    if($page->template == 'home') $out .= "You are on the home page";
+    else $out .= "This is my great website";
+    return $out;
   })
   ->render();
 ```

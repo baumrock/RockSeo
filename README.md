@@ -117,7 +117,6 @@ $rockseo
 
 
 
----
 
 ## title()
 
@@ -157,7 +156,6 @@ $rockseo
   ->render();
 ```
 
----
 
 ## description()
 
@@ -185,7 +183,6 @@ Wait! You might think: Wouldn't that echo the whole body copy of my page includi
 
 No! RockSeo is smart und will automatically strip all tags and truncate your text to 200 characters maximum.
 
----
 
 ## generator()
 
@@ -205,7 +202,6 @@ $rockseo
   ->render();
 ```
 
----
 
 ## alternate
 

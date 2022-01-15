@@ -83,6 +83,9 @@ You can try all examples easily by using the tracy console by wrapping the outpu
 
 You can see the default markup tags by dumping `$rockseo` to the console:
 
+```php
+db($rockseo);
+```
 ![img](https://i.imgur.com/sqt2z0J.png)
 
 You can easily customize any of those tags in several ways:

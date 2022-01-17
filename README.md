@@ -2,6 +2,14 @@
 
 ![img](https://i.imgur.com/XYCgj4e.gif)
 
+# Todos
+
+- add $seo->findDescription()
+
+# Why another SEO module?
+
+- Show preview with current settings (not "inherit")
+
 # Usage
 
 Zero-configuration usage with default settings:

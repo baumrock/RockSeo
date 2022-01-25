@@ -2,6 +2,8 @@
 
 ![img](https://i.imgur.com/XYCgj4e.gif)
 
+# This module is WIP and not yet ready to be used!
+
 # Todos
 
 - add $seo->findDescription()
@@ -9,6 +11,8 @@
 # Why another SEO module?
 
 - Show preview with current settings (not "inherit")
+- easier setup (code + callbacks)
+- no external tools (such as favicongenerator)
 
 # Usage
 

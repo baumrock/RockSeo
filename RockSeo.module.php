@@ -26,7 +26,7 @@ class RockSeo extends WireData implements Module {
   public static function getModuleInfo() {
     return [
       'title' => 'RockSeo',
-      'version' => '0.0.1',
+      'version' => '0.0.2',
       'summary' => 'Module to boost your sites SEO performance',
       'autoload' => true,
       'singular' => true,
@@ -50,10 +50,18 @@ class RockSeo extends WireData implements Module {
 
     /**
      * Add a static tag
+     *
+     * Second parameter can be used as condition:
+     * $rockseo->addTag(
+     *   '<meta name="robots" content="noindex">',
+     *   $page->noindex_checkbox
+     * );
+     * --> if noindex_checkbox is true the tag will be added
+     *
      * @return self
      */
-    public function addTag($markup) {
-      $this->setMarkup(uniqid(), $markup);
+    public function addTag($markup, $add = true) {
+      if(!!$add) $this->setMarkup(uniqid(), $markup);
       return $this;
     }
 
@@ -186,6 +194,7 @@ class RockSeo extends WireData implements Module {
      * Shortcut for directly populating the {value} tag:
      * $rockseo->setCallback('generator', 'ProcessWire');
      * $rockseo->setCallback('generator', false);
+     * $rockseo->setCallback('noindex', !!$page->no_index_checkbox);
      *
      * Also possible:
      * $rockseo->setCallback('foo', [
@@ -200,7 +209,7 @@ class RockSeo extends WireData implements Module {
     public function setCallback(string $name, $callback) {
       if(is_string($callback)
         OR is_array($callback)
-        OR $callback === false) {
+        OR is_bool($callback)) {
         $callback = function() use($callback) { return $callback; };
       }
       $this->callbacks->set($name, $callback);
@@ -247,11 +256,11 @@ class RockSeo extends WireData implements Module {
         ->setValue('og:description', $page->body)
 
         ->setMarkup('og:image', '<meta property="og:image" content="{value}">')
-        ->setCallback('og:image', function(Page $page, RockSeo $seo) {
+        ->setValue('og:image', function(Page $page, RockSeo $seo) {
           return $seo->findImage($page);
         })
         ->setMarkup('og:image:type', '<meta property="og:image:type" content="{value}">')
-        ->setCallback('og:image:type', function($page, $seo) {
+        ->setValue('og:image:type', function($page, $seo) {
           $img = $seo->getReturn('og:image', $page);
           if(!$img) return;
           $ext = strtolower(pathinfo($img, PATHINFO_EXTENSION));
@@ -259,28 +268,29 @@ class RockSeo extends WireData implements Module {
           if($ext == 'png') return "image/png";
         })
         ->setMarkup('og:image:width', '<meta property="og:image:width" content="{value}">')
-        ->setCallback('og:image:width', function($page, $seo) {
+        ->setValue('og:image:width', function($page, $seo) {
           $img = $seo->getReturn('og:image', $page);
           return $seo->img($img)->width;
         })
         ->setMarkup('og:image:height', '<meta property="og:image:height" content="{value}">')
-        ->setCallback('og:image:height', function($page, $seo) {
+        ->setValue('og:image:height', function($page, $seo) {
           $img = $seo->getReturn('og:image', $page);
           return $seo->img($img)->height;
         })
         ->setMarkup('og:image:alt', '<meta property="og:image:alt" content="{value}">')
-        ->setCallback('og:image:alt', function($page, $seo) {
+        ->setValue('og:image:alt', function($page, $seo) {
           $img = $seo->getReturn('og:image', $page);
           return $seo->img($img)->description;
         })
 
         ->setMarkup('og:type', '<meta property="og:type" content="website">')
+        ->show('og:type', true)
 
         ->setMarkup('og:url', '<meta property="og:url" content="{value}">')
-        ->setCallback('og:url', function($page) { return $page->httpUrl; })
+        ->setValue('og:url', function($page) { return $page->httpUrl; })
 
         ->setMarkup('og:locale', '<meta property="og:locale" content="{value}">')
-        ->setCallback('og:locale', function($page, RockSeo $seo) {
+        ->setValue('og:locale', function($page, RockSeo $seo) {
           if(!$lang = $this->wire->user->language) return;
           return $seo->hrefLang->get($lang->name);
         })
@@ -304,7 +314,7 @@ class RockSeo extends WireData implements Module {
         // </script>
 
         ->setMarkup('canonical', '<link rel="canonical" href="{value}">')
-        ->setCallback('canonical', function($page) {
+        ->setValue('canonical', function($page) {
           return $page->httpUrl;
         })
 
@@ -344,6 +354,9 @@ class RockSeo extends WireData implements Module {
 
             return $out;
         })
+
+        ->setMarkup('noindex', '<meta name="robots" content="noindex">')
+        ->show('noindex', false) // by default we dont show the noindex tag
 
       ;
 
@@ -402,6 +415,15 @@ class RockSeo extends WireData implements Module {
      */
     public function setValue($key, $value) {
       $this->setCallback($key, $value);
+      return $this;
+    }
+
+    /**
+     * Show given tag?
+     * @return self
+     */
+    public function show($key, $bool) {
+      $this->setCallback($key, $bool);
       return $this;
     }
 
@@ -497,6 +519,17 @@ class RockSeo extends WireData implements Module {
    */
   public function ___renderTag($key, $seo) {
     $callback = $this->callbacks->$key;
+    if(is_callable($callback) AND !is_string($callback)) {
+      $value = $callback($this->page, $this);
+      if($value === false) {
+        // callback returns false so we do not show the tag
+        return '';
+      }
+      if($value === true) {
+        // callback returns true so we show the tag as-is
+        return $this->markup->$key;
+      }
+    }
     return $this->replaceTags($key, $callback);
   }
 

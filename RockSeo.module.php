@@ -26,7 +26,7 @@ class RockSeo extends WireData implements Module {
   public static function getModuleInfo() {
     return [
       'title' => 'RockSeo',
-      'version' => '0.0.2',
+      'version' => '0.0.3',
       'summary' => 'Module to boost your sites SEO performance',
       'autoload' => true,
       'singular' => true,
@@ -34,6 +34,14 @@ class RockSeo extends WireData implements Module {
       'requires' => [],
       'installs' => [],
     ];
+  }
+
+  public function __construct() {
+    parent::__construct();
+    $this->markup = $this->wire(new WireData);
+    $this->callbacks = $this->wire(new WireData);
+    $this->hrefLang = $this->wire(new WireData);
+    $this->opt = $this->wire(new WireData);
   }
 
   public function init() {
@@ -222,11 +230,6 @@ class RockSeo extends WireData implements Module {
      */
     public function setDefaults() {
       $this->page = $page = $this->wire->page;
-      $this->markup = $this->wire(new WireData);
-      $this->callbacks = $this->wire(new WireData);
-      $this->hrefLang = $this->wire(new WireData);
-
-      $this->opt = $this->wire(new WireData);
       $this->opt->nl = "\n";
       $this->opt->indent = '  ';
       $this->opt->indentFirst = '';
@@ -381,6 +384,7 @@ class RockSeo extends WireData implements Module {
      * @return self
      */
     public function setMarkup(string $name, $markup) {
+      if(!$this->markup) $this->markup = $this->wire(new WireData());
       $this->markup->set($name, $markup);
       return $this;
     }
